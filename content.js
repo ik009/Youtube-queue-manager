@@ -5,24 +5,37 @@ const DRAGGING_CLASS = "ytqm-row-dragging";
 const DROP_TARGET_CLASS = "ytqm-row-drop-target";
 const MENU_CLASS = "ytqm-menu-actions";
 const STATUS_TIMEOUT_MS = 2500;
+const PENDING_NEXT_TIMEOUT_MS = 15000;
 
 let activePanel = null;
+let attachedVideo = null;
 let draggedRow = null;
 let menuRow = null;
+let pendingNext = null;
+let lastVideoId = getCurrentVideoId();
 let refreshTimer = null;
 let statusTimer = null;
+let urlCheckTimer = null;
 
 init();
 
 function init() {
   refreshEnhancements();
+  attachPlaybackSync();
 
   document.addEventListener("click", rememberMenuRow, true);
   document.addEventListener("click", handleInjectedMenuClick, true);
+  document.addEventListener("click", handlePlaybackControlClick, true);
+  window.addEventListener("yt-navigate-start", scheduleVideoChangeCheck, true);
+  window.addEventListener("yt-navigate-finish", scheduleVideoChangeCheck, true);
+  window.addEventListener("yt-page-data-updated", scheduleVideoChangeCheck, true);
+  window.addEventListener("popstate", scheduleVideoChangeCheck, true);
 
   const observer = new MutationObserver(() => {
     scheduleRefresh();
     injectMenuActions();
+    attachPlaybackSync();
+    scheduleVideoChangeCheck();
   });
   observer.observe(document.documentElement, { childList: true, subtree: true });
 }
@@ -44,6 +57,21 @@ function refreshEnhancements() {
   ensureToolbar(panel);
   enhanceRows(panel);
   updateToolbarCount(panel);
+}
+
+function attachPlaybackSync() {
+  const video = document.querySelector("video");
+
+  if (!video || video === attachedVideo) {
+    return;
+  }
+
+  if (attachedVideo) {
+    attachedVideo.removeEventListener("ended", handleVideoEnded, true);
+  }
+
+  attachedVideo = video;
+  attachedVideo.addEventListener("ended", handleVideoEnded, true);
 }
 
 function findNativeQueuePanel() {
@@ -76,18 +104,11 @@ function ensureToolbar(panel) {
 
   const toolbar = document.createElement("div");
   toolbar.className = TOOLBAR_CLASS;
-  toolbar.innerHTML = `
-    <div class="ytqm-native-title">
-      <span>Queue tools</span>
-      <span data-role="count"></span>
-    </div>
-    <div class="ytqm-native-actions">
-      <button type="button" data-action="refresh">Refresh</button>
-      <button type="button" data-action="reverse">Reverse</button>
-      <button type="button" data-action="number">Number</button>
-    </div>
-    <div class="ytqm-native-status" data-role="status"></div>
-  `;
+  toolbar.append(
+    createToolbarTitle(),
+    createToolbarActions(),
+    createStatusElement()
+  );
 
   toolbar.addEventListener("click", handleToolbarClick);
 
@@ -200,6 +221,121 @@ function handleDragEnd(event) {
   draggedRow = null;
 }
 
+function handleVideoEnded() {
+  armExpectedNextFromVisibleQueue("Video ended");
+
+  if (pendingNext) {
+    playPendingNextFromNativeQueue();
+  }
+}
+
+function handlePlaybackControlClick(event) {
+  if (!event.target.closest(".ytp-next-button")) {
+    return;
+  }
+
+  armExpectedNextFromVisibleQueue("Next");
+
+  if (pendingNext) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    window.setTimeout(playPendingNextFromNativeQueue, 0);
+  }
+}
+
+function scheduleVideoChangeCheck() {
+  window.clearTimeout(urlCheckTimer);
+  urlCheckTimer = window.setTimeout(checkForVideoChange, 80);
+}
+
+function checkForVideoChange() {
+  const currentVideoId = getCurrentVideoId();
+
+  if (!currentVideoId || currentVideoId === lastVideoId) {
+    return;
+  }
+
+  lastVideoId = currentVideoId;
+
+  if (!pendingNext) {
+    return;
+  }
+
+  if (Date.now() > pendingNext.expiresAt) {
+    pendingNext = null;
+    return;
+  }
+
+  if (currentVideoId === pendingNext.videoId) {
+    pendingNext = null;
+    return;
+  }
+
+  if (pendingNext.attempts >= 2) {
+    setStatus("YouTube ignored the reordered queue playback correction.");
+    pendingNext = null;
+    return;
+  }
+
+  pendingNext.attempts += 1;
+  playPendingNextFromNativeQueue();
+}
+
+function armExpectedNextFromVisibleQueue(reason) {
+  const nextItem = getExpectedNextQueueItem();
+
+  if (!nextItem) {
+    pendingNext = null;
+    return;
+  }
+
+  pendingNext = {
+    ...nextItem,
+    attempts: 0,
+    expiresAt: Date.now() + PENDING_NEXT_TIMEOUT_MS
+  };
+
+  setStatus(`${reason}: next is ${nextItem.title || nextItem.videoId}.`);
+}
+
+function playPendingNextFromNativeQueue() {
+  if (!pendingNext) {
+    return;
+  }
+
+  const row = findQueueRowByVideoId(pendingNext.videoId);
+  const link = row?.querySelector("a[href*='/watch']");
+
+  if (link) {
+    link.click();
+    return;
+  }
+
+  window.location.assign(pendingNext.url);
+}
+
+function getExpectedNextQueueItem() {
+  if (!activePanel) {
+    refreshEnhancements();
+  }
+
+  const items = getVisibleQueueItems(activePanel);
+  const currentVideoId = getCurrentVideoId();
+
+  if (!items.length || !currentVideoId) {
+    return null;
+  }
+
+  const currentIndex = items.findIndex((item) => item.videoId === currentVideoId);
+  const nextItem = currentIndex >= 0 ? items[currentIndex + 1] : items[0];
+
+  if (!nextItem || nextItem.videoId === currentVideoId) {
+    return null;
+  }
+
+  return nextItem;
+}
+
 function rememberMenuRow(event) {
   const row = event.target.closest(ROW_SELECTOR);
 
@@ -230,15 +366,71 @@ function injectMenuActions() {
 
   const actions = document.createElement("div");
   actions.className = MENU_CLASS;
-  actions.innerHTML = `
-    <button type="button" data-ytqm-move="top" role="menuitem">Move to top</button>
-    <button type="button" data-ytqm-move="up" role="menuitem">Move up</button>
-    <button type="button" data-ytqm-move="down" role="menuitem">Move down</button>
-    <button type="button" data-ytqm-move="bottom" role="menuitem">Move to bottom</button>
-  `;
+  actions.append(
+    createMenuButton("top", "Move to top"),
+    createMenuButton("up", "Move up"),
+    createMenuButton("down", "Move down"),
+    createMenuButton("bottom", "Move to bottom")
+  );
 
   const list = popup.querySelector("tp-yt-paper-listbox, ytd-menu-popup-renderer, #items") || popup;
   list.append(actions);
+}
+
+function createToolbarTitle() {
+  const title = document.createElement("div");
+  const label = document.createElement("span");
+  const count = document.createElement("span");
+
+  title.className = "ytqm-native-title";
+  label.textContent = "Queue tools";
+  count.dataset.role = "count";
+  title.append(label, count);
+
+  return title;
+}
+
+function createToolbarActions() {
+  const actions = document.createElement("div");
+
+  actions.className = "ytqm-native-actions";
+  actions.append(
+    createToolbarButton("refresh", "Refresh"),
+    createToolbarButton("reverse", "Reverse"),
+    createToolbarButton("number", "Number")
+  );
+
+  return actions;
+}
+
+function createToolbarButton(action, label) {
+  const button = document.createElement("button");
+
+  button.type = "button";
+  button.dataset.action = action;
+  button.textContent = label;
+
+  return button;
+}
+
+function createStatusElement() {
+  const status = document.createElement("div");
+
+  status.className = "ytqm-native-status";
+  status.dataset.role = "status";
+
+  return status;
+}
+
+function createMenuButton(action, label) {
+  const button = document.createElement("button");
+
+  button.type = "button";
+  button.dataset.ytqmMove = action;
+  button.role = "menuitem";
+  button.textContent = label;
+
+  return button;
 }
 
 function handleInjectedMenuClick(event) {
@@ -406,6 +598,25 @@ function getQueueRows(panel) {
   return [...panel.querySelectorAll(ROW_SELECTOR)].filter(isVisible);
 }
 
+function getVisibleQueueItems(panel) {
+  if (!panel) {
+    return [];
+  }
+
+  return getQueueRows(panel)
+    .map((row) => ({
+      row,
+      videoId: getPlayableRowVideoId(row),
+      title: getRowTitle(row),
+      url: getRowUrl(row)
+    }))
+    .filter((item) => item.videoId && item.url);
+}
+
+function findQueueRowByVideoId(videoId) {
+  return getQueueRows(activePanel || document).find((row) => getPlayableRowVideoId(row) === videoId) || null;
+}
+
 function getRowsContainer(rows) {
   return rows[0]?.parentElement || activePanel;
 }
@@ -419,6 +630,30 @@ function getRowId(row) {
   const videoId = getVideoIdFromUrl(link?.href || "");
 
   return videoId || row.getAttribute("video-id") || row.textContent.trim();
+}
+
+function getRowUrl(row) {
+  const link = row.querySelector("a[href*='/watch']");
+
+  return link?.href || "";
+}
+
+function getPlayableRowVideoId(row) {
+  const link = row.querySelector("a[href*='/watch']");
+
+  return getVideoIdFromUrl(link?.href || "");
+}
+
+function getRowTitle(row) {
+  return (
+    row.querySelector("#video-title")?.textContent?.trim() ||
+    row.querySelector("yt-formatted-string")?.textContent?.trim() ||
+    row.textContent.trim()
+  );
+}
+
+function getCurrentVideoId() {
+  return getVideoIdFromUrl(location.href);
 }
 
 function getVideoIdFromUrl(url) {

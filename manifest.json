@@ -9,7 +9,8 @@
       "matches": ["*://*.youtube.com/*"],
       "css": ["panel.css"],
       "js": ["content.js"],
-      "run_at": "document_idle"
+      "run_at": "document_idle",
+      "world": "MAIN"
     }
   ],
   "action": {
