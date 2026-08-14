@@ -1,0 +1,113 @@
+.ytqm-native-toolbar {
+  margin: 8px 12px;
+  padding: 8px;
+  border: 1px solid var(--yt-spec-10-percent-layer, rgb(255 255 255 / 14%));
+  border-radius: 8px;
+  background: var(--yt-spec-base-background, #0f0f0f);
+  color: var(--yt-spec-text-primary, #f1f1f1);
+  font-family: Roboto, Arial, sans-serif;
+}
+
+.ytqm-native-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ytqm-native-title [data-role="count"] {
+  color: var(--yt-spec-text-secondary, #aaa);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.ytqm-native-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.ytqm-native-toolbar button,
+.ytqm-menu-actions button {
+  min-height: 28px;
+  border: 1px solid var(--yt-spec-10-percent-layer, rgb(255 255 255 / 14%));
+  border-radius: 6px;
+  background: var(--yt-spec-badge-chip-background, rgb(255 255 255 / 10%));
+  color: var(--yt-spec-text-primary, #f1f1f1);
+  cursor: pointer;
+  font: 500 12px/1 Roboto, Arial, sans-serif;
+}
+
+.ytqm-native-toolbar button:hover,
+.ytqm-menu-actions button:hover {
+  background: var(--yt-spec-button-chip-background-hover, rgb(255 255 255 / 16%));
+}
+
+.ytqm-native-toolbar button:focus-visible,
+.ytqm-menu-actions button:focus-visible {
+  outline: 2px solid #3ea6ff;
+  outline-offset: 2px;
+}
+
+.ytqm-native-status {
+  min-height: 16px;
+  margin-top: 6px;
+  color: var(--yt-spec-text-secondary, #aaa);
+  font-size: 12px;
+}
+
+.ytqm-native-row {
+  cursor: grab;
+}
+
+.ytqm-native-row:active {
+  cursor: grabbing;
+}
+
+.ytqm-row-dragging {
+  opacity: 0.5;
+}
+
+.ytqm-row-drop-target {
+  outline: 2px solid #3ea6ff;
+  outline-offset: -2px;
+}
+
+.ytqm-show-numbers .ytqm-native-row {
+  position: relative;
+}
+
+.ytqm-show-numbers .ytqm-native-row::before {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #3ea6ff;
+  color: #0f0f0f;
+  content: attr(data-ytqm-index);
+  font: 700 12px/1 Roboto, Arial, sans-serif;
+}
+
+.ytqm-menu-actions {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border-top: 1px solid var(--yt-spec-10-percent-layer, rgb(255 255 255 / 14%));
+}
+
+.ytqm-menu-actions button {
+  width: 100%;
+  min-width: 160px;
+  justify-content: flex-start;
+  padding: 0 10px;
+  text-align: left;
+}

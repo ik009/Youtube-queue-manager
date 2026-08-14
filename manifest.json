@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "YouTube Queue Manager",
+  "version": "0.2.0",
+  "description": "Enhances YouTube's native queue panel with extra reorder controls.",
+  "host_permissions": ["*://*.youtube.com/*"],
+  "content_scripts": [
+    {
+      "matches": ["*://*.youtube.com/*"],
+      "css": ["panel.css"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "YouTube Queue Manager"
+  }
+}
